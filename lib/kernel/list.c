@@ -153,13 +153,15 @@ list_tail (struct list *list) {
 /* Inserts ELEM just before BEFORE, which may be either an
    interior element or a tail.  The latter case is equivalent to
    list_push_back(). */
+/* 새로운 요소를 기존 리스트의 특정 위치에 삽입하는 함수 */
 void
 list_insert (struct list_elem *before, struct list_elem *elem) {
+	/* before(삽입할 위치)가 리스트 내부에 있는지, 리스트 끝에 존재하는지 체크 */
 	ASSERT (is_interior (before) || is_tail (before));
-	ASSERT (elem != NULL);
+	ASSERT (elem != NULL);			
 
-	elem->prev = before->prev;
-	elem->next = before;
+	elem->prev = before->prev;		/* elem의 prev포인터 설정 */
+	elem->next = before;			/* elem의 next포인터 설정 */
 	before->prev->next = elem;
 	before->prev = elem;
 }
@@ -415,19 +417,21 @@ list_sort (struct list *list, list_less_func *less, void *aux) {
 /* Inserts ELEM in the proper position in LIST, which must be
    sorted according to LESS given auxiliary data AUX.
    Runs in O(n) average case in the number of elements in LIST. */
+/* 🌸 priority에 이용할 함수!! : 주어진 리스트에 정렬된 순서대로 새로운 원소를 삽입 */
 void
 list_insert_ordered (struct list *list, struct list_elem *elem,
 		list_less_func *less, void *aux) {
 	struct list_elem *e;
 
-	ASSERT (list != NULL);
+	ASSERT (list != NULL);	
 	ASSERT (elem != NULL);
 	ASSERT (less != NULL);
 
+	/* 리스트의 처음부터 끝까지 반복문을 실행하면서, 새로운 원소를 삽입할 위치를 찾음 */
 	for (e = list_begin (list); e != list_end (list); e = list_next (e))
-		if (less (elem, e, aux))
+		if (less (elem, e, aux))	
 			break;
-	return list_insert (e, elem);
+	return list_insert (e, elem);	/* 새로운 원소를 찾은 위치(e)의 앞에 삽입 */
 }
 
 /* Iterates through LIST and removes all but the first in each

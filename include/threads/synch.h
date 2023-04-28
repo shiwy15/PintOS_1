@@ -11,6 +11,7 @@ struct semaphore {
 };
 
 void sema_init (struct semaphore *, unsigned value);
+bool sema_compare_priority(const struct list_elem *aa, const struct list_elem *bb, void *aux);
 void sema_down (struct semaphore *);
 bool sema_try_down (struct semaphore *);
 void sema_up (struct semaphore *);
