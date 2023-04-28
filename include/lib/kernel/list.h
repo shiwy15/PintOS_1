@@ -99,7 +99,10 @@ struct list {
    the structure that LIST_ELEM is embedded inside.  Supply the
    name of the outer structure STRUCT and the member name MEMBER
    of the list element.  See the big comment at the top of the
-   file for an example. */
+   file for an example. 
+   ❗️ 리스트의 원소가 속한 구조체의 주소를 쉽게 찾기 위해 사용됨.
+      - 리스트에서 원소를 삽입, 삭제할 때, 원소가 속한 구조체의 주소를 먼저 계산해야 하는데, 이 때 사용하면 코드가 더 간결해짐
+      - 리스트원소 list_elem 이 어떤 구조체의 멤버의 일부분인지를 나타내는 포인터 반환*/
 #define list_entry(LIST_ELEM, STRUCT, MEMBER)           \
 	((STRUCT *) ((uint8_t *) &(LIST_ELEM)->next     \
 		- offsetof (STRUCT, MEMBER.next)))

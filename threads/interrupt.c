@@ -146,7 +146,8 @@ intr_enable (void) {
 	return old_level;
 }
 
-/* Disables interrupts and returns the previous interrupt status. */
+/* Disables interrupts and returns the previous interrupt status. 
+	- 인터럽트를 비활성화하고, 이전 인터럽트 상태를 반환하는 함수 */
 enum intr_level
 intr_disable (void) {
 	enum intr_level old_level = intr_get_level ();
