@@ -108,7 +108,6 @@ struct thread {
 	struct list donations;				/* 해당 스레드에게 우선순위를 기부한 스레드들의 리스트 */
 	struct list_elem d_elem;			/* donations 리스트를 관리하기 위한 element */
 
-
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */

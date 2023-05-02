@@ -30,7 +30,7 @@ static void __do_fork (void *);
 /* General process initializer for initd and other process. */
 static void
 process_init (void) {
-	struct thread *current = thread_current ();
+  struct thread *current = thread_current ();
 }
 
 /* Starts the first userland program, called "initd", loaded from FILE_NAME.
@@ -42,6 +42,7 @@ tid_t
 process_create_initd (const char *file_name) {
 	char *fn_copy;
 	tid_t tid;
+	void *save_ptr;
 
 	/* Make a copy of FILE_NAME.
 	 * Otherwise there's a race between the caller and load(). */
@@ -49,6 +50,8 @@ process_create_initd (const char *file_name) {
 	if (fn_copy == NULL)
 		return TID_ERROR;
 	strlcpy (fn_copy, file_name, PGSIZE);
+
+	//file_name = strtok_r(file_name, " ",&save_ptr );
 
 	/* Create a new thread to execute FILE_NAME. */
 	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
@@ -66,8 +69,9 @@ initd (void *f_name) {
 
 	process_init ();
 
-	if (process_exec (f_name) < 0)
+	if (process_exec (f_name) < 0) {
 		PANIC("Fail to launch initd\n");
+	}
 	NOT_REACHED ();
 }
 
@@ -76,8 +80,7 @@ initd (void *f_name) {
 tid_t
 process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	/* Clone current thread to new thread.*/
-	return thread_create (name,
-			PRI_DEFAULT, __do_fork, thread_current ());
+	return thread_create (name,	PRI_DEFAULT, __do_fork, thread_current ());
 }
 
 #ifndef VM
@@ -165,30 +168,78 @@ process_exec (void *f_name) {
 	char *file_name = f_name;
 	bool success;
 
+	int argc = 0;
+	char *argv[128];
+	char *ret_ptr, *next_ptr;
+
+	ret_ptr = strtok_r(file_name, " ", &next_ptr);
+
+	while (ret_ptr) {
+		argv[argc++] = ret_ptr;
+		ret_ptr = strtok_r(NULL, " ", &next_ptr);
+	}
+
+	file_name = argv[0];
+
 	/* We cannot use the intr_frame in the thread structure.
 	 * This is because when current thread rescheduled,
 	 * it stores the execution information to the member. */
-	struct intr_frame _if;
-	_if.ds = _if.es = _if.ss = SEL_UDSEG;
-	_if.cs = SEL_UCSEG;
+	struct intr_frame _if; // contains informations for context switching such as register, stack pointer
+	_if.ds = _if.es = _if.ss = SEL_UDSEG; // stack - user data
+	_if.cs = SEL_UCSEG; // stack - user code
 	_if.eflags = FLAG_IF | FLAG_MBS;
 
 	/* We first kill the current context */
 	process_cleanup ();
-
-	/* And then load the binary */
+	
 	success = load (file_name, &_if);
-
 	/* If load failed, quit. */
-	palloc_free_page (file_name);
-	if (!success)
+	if (!success) {
 		return -1;
+	}
+
+	argument_stack(argc, argv, &_if);
+
+	hex_dump(_if.rsp, _if.rsp, USER_STACK - _if.rsp, true);
+
+	palloc_free_page (file_name);
 
 	/* Start switched process. */
 	do_iret (&_if);
 	NOT_REACHED ();
 }
 
+void argument_stack (int argc, char **argv, struct intr_frame *if_)
+{
+	for (int i = argc-1; i >= 0; i--) {
+		int argv_len = strlen(argv[i]) + 1; // length of argv[i] + sentinel('\n')
+		if_->rsp -= argv_len;
+		memcpy(if_->rsp, argv[i], argv_len); // 스택 포인터에 인자를 복사
+		argv[i] = (char *)if_->rsp; // 현재 문자열 시작 주소 위치를 저장
+	}
+
+	/* padding for word-align */
+	if (if_->rsp % 8) {
+		int padding = if_->rsp % 8;
+		if_->rsp -= padding;
+		memset(if_->rsp, 0, padding);
+	}
+
+	if_->rsp -= 8;
+	memset(if_->rsp, 0, 8);
+
+	for (int i = argc-1; i >= 0; i--) {
+		if_->rsp -= 8;
+		memcpy(if_->rsp, &argv[i], 8);
+	}
+
+	/* fake return address */
+	if_->rsp -= 8; 
+	memset(if_->rsp, 0, 8);
+
+	if_->R.rdi = argc;
+	if_->R.rsi = if_->rsp + 8; // fake_address 바로 위 = arg_address 맨 앞 가리키는 주소값
+}
 
 /* Waits for thread TID to die and returns its exit status.  If
  * it was terminated by the kernel (i.e. killed due to an
@@ -204,6 +255,7 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
+	while (1) {}
 	return -1;
 }
 
@@ -334,6 +386,7 @@ load (const char *file_name, struct intr_frame *if_) {
 	if (t->pml4 == NULL)
 		goto done;
 	process_activate (thread_current ());
+
 
 	/* Open executable file. */
 	file = filesys_open (file_name);

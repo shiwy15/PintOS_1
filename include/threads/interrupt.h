@@ -25,13 +25,13 @@ struct gp_registers {
 	uint64_t r10;
 	uint64_t r9;
 	uint64_t r8;
-	uint64_t rsi;
-	uint64_t rdi;
-	uint64_t rbp;
-	uint64_t rdx;
-	uint64_t rcx;
-	uint64_t rbx;
-	uint64_t rax;
+	uint64_t rsi; // source index register, 
+	uint64_t rdi; // destination index register
+	uint64_t rbp; // base pointer register
+	uint64_t rdx; // data register 
+	uint64_t rcx; // count register
+	uint64_t rbx; // base register
+	uint64_t rax; // accumulator register, syscall number
 } __attribute__((packed));
 
 struct intr_frame {
@@ -52,12 +52,12 @@ struct intr_frame {
 	uint64_t error_code;
 /* Pushed by the CPU.
    These are the interrupted task's saved registers. */
-	uintptr_t rip;
+	uintptr_t rip; // instruction pointer
 	uint16_t cs;
 	uint16_t __pad5;
 	uint32_t __pad6;
 	uint64_t eflags;
-	uintptr_t rsp;
+	uintptr_t rsp; // stack pointer register
 	uint16_t ss;
 	uint16_t __pad7;
 	uint32_t __pad8;

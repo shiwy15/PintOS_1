@@ -182,8 +182,7 @@ void thread_print_stats(void)
    Priority scheduling is the goal of Problem 1-3. */
    /* create() : 새로운 스레드를 생성하는 함수 
    	- 입력값 : 생성할 스레드의 이름, 우선순위, 생성할 스레드가 실행할 함수의 포인터, 그 함수에 전달할 인자 */
-tid_t thread_create(const char *name, int priority,
-					thread_func *function, void *aux)
+tid_t thread_create (const char *name, int priority, thread_func *function, void *aux)
 {
 	/* 새로 생성할 구조체와 스레드 id를 저장할 변수 선언 */
 	struct thread *t;
@@ -405,10 +404,17 @@ void remove_with_lock (struct lock *lock)
 	- 리스트에서는 각 원소가 struct list_elem의 형태로 존재 */
 void thread_preemption(void)
 {	
+	/*
 	if (!list_empty(&ready_list) && 
-		thread_current()->priority < 
-		list_entry(list_front(&ready_list), struct thread, elem)->priority)
+		thread_current()->priority < list_entry(list_front(&ready_list), struct thread, elem)->priority)
 		thread_yield();
+		*/
+	if (list_empty(&ready_list) || intr_context()) {
+		return;
+	}
+	if(thread_current()->priority < list_entry(list_front(&ready_list), struct thread, elem)->priority){
+		thread_yield();
+	}
 }
 
 /* 🌸 priority 재설정 함수 */
