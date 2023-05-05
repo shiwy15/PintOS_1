@@ -5,6 +5,7 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
+#include "threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -27,6 +28,10 @@ typedef int tid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
+
+/*----Project 2 추가 -----*/
+#define FD_NUM_LIMIT (1<<10)
+#define FDT_PAGES 3
 
 /* A kernel thread or user process.
  *
@@ -93,6 +98,7 @@ struct thread {
 	enum thread_status status;          /* Thread state. */
 	char name[16];                      /* Name (for debugging purposes). */
 	int priority;                       /* Priority. */
+
 	/* 🚨 alarm clock 추가 */
 	int64_t wakeup;						/* 일어나야 하는 ticks 값 */
 
@@ -108,6 +114,21 @@ struct thread {
 	struct list donations;				/* 해당 스레드에게 우선순위를 기부한 스레드들의 리스트 */
 	struct list_elem d_elem;			/* donations 리스트를 관리하기 위한 element */
 
+	/*----- project 2 : syscall 추가 ------*/
+	int exit_status;					/* 프로세스의 종료 상태 */
+	struct semaphore wait_sema;
+
+	struct list child_list;
+	struct list_elem child_elem;
+	struct intr_frame parent_if;
+
+	struct semaphore fork_sema;
+	struct semaphore free_sema;
+
+	struct file **file_descriptor_table;	/* 파일 디스크립터 테이블 & 인덱스 */
+	int fd_idx;
+	int stdin_count;
+	int stdout_count;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
@@ -168,5 +189,8 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
+
+/* project 2 cnrk */
+struct thread *get_child(int pid);
 
 #endif /* threads/thread.h */

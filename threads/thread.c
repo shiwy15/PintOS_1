@@ -30,6 +30,9 @@ static struct list ready_list;
 /* 🚨 alarm clock 추가 : sleep list 구조체 정의 */
 static struct list sleep_list;
 
+/* project 2 추가 */
+static struct list child_list;
+
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -199,6 +202,22 @@ tid_t thread_create(const char *name, int priority,
 	/* Initialize thread. : 스레드 초기화 */
 	init_thread(t, name, priority);	/* 할당받은 구조체 초기화 */
 	tid = t->tid = allocate_tid();	/* 스레드 id 할당 */
+
+	/* 자식 리스트에 추가 */
+	struct thread *cur = thread_current();
+	list_push_back(&cur->child_list, &t->child_elem);
+
+	/* file descriptor : 파일 디스크립터 테이블 초기화 
+	 * palloc_get_page를 사용한다면 페이지 1개만 할당하게 되어, fd가 많아질 수록 공간이 부족해질 수 있음. 
+	 * 파일 디스크립터 테이블 메모리 할당에 실패하면 스레드 생성 실패로 처리 */
+	t->file_descriptor_table = palloc_get_multiple(PAL_ZERO, FDT_PAGES);
+	if (t->file_descriptor_table == NULL)
+		return TID_ERROR;
+	t->fd_idx = 2;						/* 2부터 시작 */
+	t->file_descriptor_table[0] = 1;	/* NULL값과 구분하기 위한 더미값 */
+	t->file_descriptor_table[1] = 2;
+	t->stdin_count = 1;					/* stdin과 stdout으로 할당된 fd 갯수 */
+	t->stdout_count = 1;
 
 	/* Call the kernel_thread if it scheduled.
 	 * Note) rdi is 1st argument, and rsi is 2nd argument. */
@@ -549,7 +568,7 @@ kernel_thread (thread_func *function, void *aux) {
 
 /* Does basic initialization of T as a blocked thread named
    NAME. 
-   🌸 유저 스레드를 위한 초기화 수행 */
+   🌸 스레드 초기화 수행 */
 static void
 init_thread (struct thread *t, const char *name, int priority) {
 	ASSERT (t != NULL);
@@ -567,6 +586,13 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->init_priority = priority;
 	t->wait_lock = NULL;
 	list_init (&t->donations);
+
+	/* project 2 */
+	t->exit_status = 0;
+	list_init(&t->child_list);
+	sema_init(&t->fork_sema, 0);
+	sema_init(&t->wait_sema, 0);
+	sema_init(&t->free_sema, 0);
 
 }
 
@@ -760,4 +786,16 @@ allocate_tid(void)
 	lock_release(&tid_lock);
 
 	return tid;
+}
+
+/* 특정 tid를 가진 스레드를 찾아서 반환해주는 함수 */
+struct thread *get_child(int pid) {
+	struct thread *cur = thread_current();
+	struct list *child_list = &cur->child_list;
+	for (struct list_elem *e = list_begin(child_list); e != list_end(child_list); e = list_next(e)) {
+		struct thread *t = list_entry(e, struct thread, child_elem);
+		if (t->tid == pid)
+			return t;
+	}
+	return NULL;
 }

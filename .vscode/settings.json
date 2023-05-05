@@ -2,6 +2,11 @@
     "files.associations": {
         "stdio.h": "c",
         "vaddr.h": "c",
-        "list.h": "c"
+        "list.h": "c",
+        "debug.h": "c",
+        "interrupt.h": "c",
+        "palloc.h": "c",
+        "syscall.h": "c",
+        "thread.h": "c"
     }
 }

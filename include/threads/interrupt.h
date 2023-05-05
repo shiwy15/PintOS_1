@@ -25,13 +25,13 @@ struct gp_registers {
 	uint64_t r10;
 	uint64_t r9;
 	uint64_t r8;
-	uint64_t rsi;
-	uint64_t rdi;
+	uint64_t rsi;		/* 인자의 시작 주소. 두 번째 인자 */
+	uint64_t rdi;		/* file_name 저장. 첫번째 인자 */
 	uint64_t rbp;
-	uint64_t rdx;
+	uint64_t rdx;		/* 명령어 사이즈. 세번째 인자 */
 	uint64_t rcx;
-	uint64_t rbx;
-	uint64_t rax;
+	uint64_t rbx;		
+	uint64_t rax;		/* 시스템 콜 넘버 */
 } __attribute__((packed));
 
 struct intr_frame {
