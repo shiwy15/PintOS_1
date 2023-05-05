@@ -30,6 +30,9 @@ static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
 static void __do_fork (void *);
 
+/* 추가 */
+void argument_stack(struct intr_frame *if_, char **argv, int argc);
+
 /* General process initializer for initd and other process. */
 static void
 process_init (void) {
@@ -57,10 +60,10 @@ process_create_initd (const char *file_name) {		/* file_name : 실행파일 이�
 	          										/* 실행파일 이름이 복사본을 만들어서 이름이 변경되는 경우를 방지 */
 
 	/* project 2 추가 */
-	char *token, *save_ptr;
-	token = strtok_r(file_name, " ", &save_ptr);
+	char *save_ptr;
+	file_name = strtok_r(file_name, " ", &save_ptr);
 	/* Create a new thread to execute FILE_NAME. */
-	tid = thread_create (token, PRI_DEFAULT, initd, fn_copy);	/* initd 함수를 실행하는 새로운 스레드 생성 */
+	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);	/* initd 함수를 실행하는 새로운 스레드 생성 */
 	if (tid == TID_ERROR)							/* 스레드 생성 실패시 할당된 페이지 해제 & 에러값 반환 */
 		palloc_free_page (fn_copy);
 	return tid;										/* 생성된 스레드 id값 반환 */
@@ -111,8 +114,8 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	 * 부모 스레드는 자식 스레드를 미리 저장해놓고, 해당 정보를 확인하며 오류 여부 등을 확인할 수 있음 */
 	struct thread *child = get_child(pid);		/*????? 이 함수 어디감? 내가 만들어야 되는구나....^^...*/
 	sema_down(&child->fork_sema);
-	// if (child->exit_status == -1)
-	// 	return TID_ERROR;
+	if (child->exit_status == -1)
+		return TID_ERROR;
 
 	return pid;
 }
@@ -132,7 +135,7 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	/* 1. TODO: If the parent_page is kernel page, then return immediately. */
 	/* 현재 가상주소(va)가 커널 주소인 경우 무시 */
 	if(is_kernel_vaddr(va))
-		return false;
+		return true;
 	/* 2. Resolve VA from the parent's page map level 4. */
 	/* 부모 페이지 테이블에서 va 해당하는 가상주소의 PTE를 가져와서 parent_page에 저장 */
 	parent_page = pml4_get_page (parent->pml4, va);
@@ -151,7 +154,7 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	 *    TODO: according to the result). */
 	/* 부모 페이지를 새로운 페이지에 복제*/
 	memcpy(newpage, parent_page, PGSIZE);
-	writable = is_writable(pte);
+	writable = is_writable(pte);		/* pte 읽고 쓰기가 가능한지 확인 */
 	/* 5. Add new page to child's page table at address VA with WRITABLE
 	 *    permission. */
 	if (!pml4_set_page (current->pml4, va, newpage, writable)) {
@@ -179,7 +182,9 @@ __do_fork (void *aux) {
 
 	/* Read the cpu context to local stack. */
 	/* 1. aux로 전달받은 parent 스레드의 컨텍스트를 로컬 스택에 복사! */
+	parent_if = &parent->parent_if;
 	memcpy (&if_, parent_if, sizeof (struct intr_frame));
+	if_.R.rax = 0;
 
 	/* Duplicate PT 
 	 * 2. 새로운 스레드의 페이지 디렉토리 생성 */
@@ -227,8 +232,7 @@ __do_fork (void *aux) {
 	current->fd_idx = parent->fd_idx;
 	/* 세마포어값을 증가시켜서 부모 프로세스에게 자식이 생성되었음을 알림 */
 	sema_up(&current->fork_sema);
-	if_.R.rax = 0;
-	process_init();
+	// process_init();
 	
 	/* Finally, switch to the newly created process. */
 	if (succ)
@@ -247,18 +251,7 @@ process_exec (void *f_name) {
 	char *file_name = f_name;				/* void로 넘겨받았기 때문에 문자열 인식을 위해 char로 바꿔줌 */
 	bool success;							/* 바이너리 파일의 로드 성공 여부 저장 */		
 
-	/* We cannot use the intr_frame in the thread structure.
-	 * This is because when current thread rescheduled,
-	 * it stores the execution information to the member. */
-	struct intr_frame _if;				  /* _if 구조체 : 인터럽트 발생 시 실행되는 코드의 정보 저장 */
-	_if.ds = _if.es = _if.ss = SEL_UDSEG; /* 데이터, 코드, 스택 세그먼트(ds, es, ss, cs)를 유저 데이터 세그먼트(SEL_UDSEG)로 설정 */
-	_if.cs = SEL_UCSEG;					  /* 유저모드에서 실행되는 프로세스가 접근할 수 있는 메모리 영역을 설정하는 작업 */
-	_if.eflags = FLAG_IF | FLAG_MBS;
-
-	/* We first kill the current context */
-	process_cleanup ();						/* 현재 프로세스에 할당된 페이지 디렉토리를 지움 */
-
-	/* project 2 : 커맨드 라인 파싱 */
+/* project 2 : 커맨드 라인 파싱 */
 	char *argv[128];						/* 커맨드 라인 문자열 배열은 최대 128바이트 */
 	char *token, *save_ptr;
 	int argc = 0;							/* argc : 현재까지 저장된 인자의 갯수*/
@@ -270,11 +263,22 @@ process_exec (void *f_name) {
 		argv[argc++] = token;
 	}
 
+	/* We cannot use the intr_frame in the thread structure.
+	 * This is because when current thread rescheduled,
+	 * it stores the execution information to the member. */
+	struct intr_frame _if;				  /* _if 구조체 : 인터럽트 발생 시 실행되는 코드의 정보 저장 */
+	_if.ds = _if.es = _if.ss = SEL_UDSEG; /* 데이터, 코드, 스택 세그먼트(ds, es, ss, cs)를 유저 데이터 세그먼트(SEL_UDSEG)로 설정 */
+	_if.cs = SEL_UCSEG;					  /* 유저모드에서 실행되는 프로세스가 접근할 수 있는 메모리 영역을 설정하는 작업 */
+	_if.eflags = FLAG_IF | FLAG_MBS;
+
+	/* We first kill the current context */
+	process_cleanup ();						/* 현재 프로세스에 할당된 페이지 디렉토리를 지움 */
+
 	/* And then load the binary */
 	success = load (file_name, &_if);		/* load 함수 호출 & 실행 결과를 success에 저장*/
 
 	/* If load failed, quit. */
-	palloc_free_page (file_name);			/* 포인터 메모리 해제 */
+	// palloc_free_page (file_name);			/* 포인터 메모리 해제 */
 	if (!success)							/* load 함수 실패 시, -1을 리턴하고 종료 */
 	{
 		palloc_free_page(file_name);
@@ -286,7 +290,7 @@ process_exec (void *f_name) {
 
 	hex_dump(_if.rsp, _if.rsp, USER_STACK-_if.rsp, true);
 	
-	palloc_free_page(file_name);
+	// palloc_free_page(file_name);
 
 	/* Start switched process. */
 	do_iret (&_if);							/* _if 구조체에 저장된 새로운 프로그램의 시작점으로 이동 */
@@ -303,6 +307,9 @@ argument_stack(struct intr_frame *if_, char **argv, int argc) {
 
 	/* 각 인자를 유저스택에 저장 */
 	for (i = argc - 1; i >= 0; i--) {			/* argc-1부터 0까지 역순으로 인덱스를 탐색 */
+		if (argv[i] == NULL) {
+			continue;
+		}
 		size_t len = strlen(argv[i]);			/* 각 인자의 길이를 계산 */								
 		if_->rsp = if_->rsp - (len+1);
 		memcpy((if_->rsp), argv[i], len+1);		/* memcpy함수로 각 인자를 해당하는 스택 주소에 저장 */
@@ -313,7 +320,8 @@ argument_stack(struct intr_frame *if_, char **argv, int argc) {
 	 * 8의 배수가 아닐 경우, 0으로 채워진 바이트를 스택에 푸시해 정렬을 맞춤 */
 	while ((if_->rsp) % 8 != 0) {
 		if_->rsp--;
-		*(uint8_t *) (if_->rsp) = 0;
+		memset(if_->rsp, 0, sizeof(uint8_t));
+		// *(uint8_t *) (if_->rsp) = 0;
 	}
 
 	/* 유저 스택에 argv_address 배열의 주소 값들을 푸쉬 */
@@ -329,12 +337,12 @@ argument_stack(struct intr_frame *if_, char **argv, int argc) {
     }
 
     /* fake return address 추가 */
-	if_->rsp = if_->rsp - 8;
+	if_->rsp = sizeof(void *);
     memset(if_->rsp, 0, sizeof(void *));
 
     /* 레지스터 값 설정 */
     if_->R.rdi = argc;					/* rdi에 argc값 전달 */
-    if_->R.rsi = if_->rsp + 8 ;			/* rsi에 argv의 첫번째 원소 주소값 설정 */
+    if_->R.rsi = if_->rsp + 8;			/* rsi에 argv의 첫번째 원소 주소값 설정 */
 }
 
 /* Waits for thread TID to die and returns its exit status.  If
@@ -383,19 +391,32 @@ process_exit (void) {
 	 * TODO: We recommend you to implement process resource cleanup here. */
 
 	/* 프로세스에 열린 모든 파일 닫기 */
-	for (int fd = 2; fd <= FD_NUM_LIMIT; fd++) {
+	for (int fd = 0; fd <= FD_NUM_LIMIT; fd++) {
 		close(fd);
 	}
 	/* 파일 디스크립터 테이블 메모리 해제 */
 	palloc_free_multiple(cur->file_descriptor_table, FDT_PAGES);
-
-	process_cleanup ();
+	// file_close(cur->running);
 
 	/* 부모 프로세스 깨우기 */
 	sema_up(&cur->wait_sema);
 	/* 자식 프로세스가 완전히 종료되기 전에 자식의 자원이 해제되지 않도록 지연시켜 줌
 	 * 자식의 자원이 모두 안전하게 해제될 수 있게 함. */
 	sema_down(&cur->free_sema);
+
+	process_cleanup ();
+}
+
+/* 특정 tid를 가진 스레드를 찾아서 반환해주는 함수 */
+struct thread *get_child(int pid) {
+	struct thread *cur = thread_current();
+	struct list *child_list = &cur->child_list;
+	for (struct list_elem *e = list_begin(child_list); e != list_end(child_list); e = list_next(e)) {
+		struct thread *t = list_entry(e, struct thread, child_elem);
+		if (t->tid == pid)
+			return t;
+	}
+	return NULL;
 }
 
 /* Free the current process's resources. */
@@ -612,7 +633,7 @@ load (const char *file_name, struct intr_frame *if_) {
 done:
 	/* We arrive here whether the load is successful or not. 
 	 * 파일을 닫고, load의 성공 여부에 관계 없이 공통적으로 done으로 이동함 */
-	file_close (file);
+	// file_close (file);
 	return success;
 }
 

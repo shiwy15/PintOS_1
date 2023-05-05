@@ -788,14 +788,3 @@ allocate_tid(void)
 	return tid;
 }
 
-/* 특정 tid를 가진 스레드를 찾아서 반환해주는 함수 */
-struct thread *get_child(int pid) {
-	struct thread *cur = thread_current();
-	struct list *child_list = &cur->child_list;
-	for (struct list_elem *e = list_begin(child_list); e != list_end(child_list); e = list_next(e)) {
-		struct thread *t = list_entry(e, struct thread, child_elem);
-		if (t->tid == pid)
-			return t;
-	}
-	return NULL;
-}

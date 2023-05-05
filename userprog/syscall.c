@@ -13,6 +13,7 @@
 #include "threads/palloc.h"
 #include "threads/synch.h"
 #include "userprog/process.h"
+#include "filesys/file.h"
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
@@ -22,7 +23,7 @@ void halt (void);
 void exit (int status);
 tid_t fork (const char *thread_name, struct intr_frame *if_);
 int exec (const char *file);
-int wait (pid_t tid);
+int wait (pid_t pid);
 int open (const char *file);
 bool create(const char *file, unsigned initial_size);
 bool remove(const char *file);
@@ -78,10 +79,11 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			exit(f->R.rdi);
 			break;
 		case SYS_FORK:
-			f->R.rax = fork(f->R.rdi, f->R.rsi);
+			f->R.rax = fork(f->R.rdi, f);
 			break;
 		case SYS_EXEC:
-			f->R.rax = exec(f->R.rdi);
+			if(exec(f->R.rdi) == -1)
+				exit(-1);
 			break;
 		case SYS_WAIT:
 			f->R.rax = wait(f->R.rdi);
@@ -113,9 +115,10 @@ syscall_handler (struct intr_frame *f UNUSED) {
 		case SYS_CLOSE:
 			close(f->R.rdi);
 			break;
-	default:
-		printf ("system call!\n");
-		thread_exit ();	
+		default:
+			printf ("system call!\n");
+			exit (-1);	
+			break;
 	}
 }
 
@@ -158,10 +161,7 @@ bool create(const char *file, unsigned initial_size) {
 /* 파일 제거 시스템콜 */
 bool remove(const char *file) {
 	check_address(file);
-	if (filesys_remove(file))
-		return true;
-	else
-		return false;
+	return filesys_remove(file);
 	/* 파일 이름에 해당하는 파일을 제거 (true/false 반환) */
 }
 
@@ -169,6 +169,7 @@ bool remove(const char *file) {
  * 프로세스가 파일을 open하면 커널은 해당 프로세스의 fd 중에 사용하지 않는 가장 작은 값을 할당 */
 int open (const char *file) {
 	check_address(file);
+	lock_acquire(&filesys_lock);
 	struct thread *cur = thread_current();
 
 	/* file을 열어서 포인터 f에 저장 (실패 시 -1 반환) */
@@ -193,6 +194,7 @@ int open (const char *file) {
 	cur->fd_idx = fd;
 	fd_table[fd] = f;
 
+	lock_release(&filesys_lock);
 	return fd;
 }
 
@@ -218,9 +220,9 @@ int read (int fd, void *buffer, unsigned length) {
 
 	struct thread *cur = thread_current();
 	struct file *f = cur->file_descriptor_table[fd];
-	if (f == NULL || 2 > fd || fd > FD_NUM_LIMIT)
+	if (f == NULL || 0 > fd || fd > FD_NUM_LIMIT)
 		return -1;
-
+		
 	lock_acquire(&filesys_lock);
 	int bytes_read = file_read(f, buffer, length);
 	lock_release(&filesys_lock);
@@ -264,7 +266,7 @@ unsigned tell (int fd) {
 
 	struct thread *cur = thread_current();
 	struct file *f = cur->file_descriptor_table[fd];
-	if (2 > fd || fd > FD_NUM_LIMIT)
+	if (0 > fd || fd > FD_NUM_LIMIT)
 		return;
 
 	return file_tell(fd);
@@ -275,16 +277,16 @@ unsigned tell (int fd) {
 void close (int fd) {
 	struct thread *cur = thread_current();
 	struct file *f = cur->file_descriptor_table[fd];
-	if (f == NULL || 2 > fd || fd > FD_NUM_LIMIT)
-		return -1;
+	if (f == NULL || 0 > fd || fd > FD_NUM_LIMIT)
+		return;
 
-	file_close(f);
+	// file_close(f);
 	cur->file_descriptor_table[fd] = NULL;
 }
 
 /* 기존 프로세스의 자식 프로세스 생성 */
-tid_t fork (const char *thread_name, struct intr_frame *if_) {
-	return process_fork(thread_name, if_);
+tid_t fork (const char *thread_name, struct intr_frame *f) {
+	return process_fork(thread_name, f);
 }
 
 /* 현재 프로세스를 명령어로 입력받은 실행파일로 변경 
