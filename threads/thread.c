@@ -233,7 +233,9 @@ tid_t thread_create(const char *name, int priority,
 
 	/* Add to run queue. : ready_list에 추가 */
 	thread_unblock(t);
-	thread_preemption();
+	// thread_preemption();
+	if (thread_compare_priority(&t->elem, &cur->elem, 0))
+		thread_yield();
 
 	/* 생성된 스레드의 id 반환 */
 	return tid;
@@ -593,6 +595,7 @@ init_thread (struct thread *t, const char *name, int priority) {
 	sema_init(&t->fork_sema, 0);
 	sema_init(&t->wait_sema, 0);
 	sema_init(&t->free_sema, 0);
+	t->running = NULL;
 
 }
 

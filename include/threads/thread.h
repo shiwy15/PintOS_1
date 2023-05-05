@@ -129,6 +129,8 @@ struct thread {
 	int fd_idx;
 	int stdin_count;
 	int stdout_count;
+	
+	struct file *running;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */

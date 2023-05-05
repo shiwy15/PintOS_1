@@ -60,8 +60,8 @@ process_create_initd (const char *file_name) {		/* file_name : 실행파일 이�
 	          										/* 실행파일 이름이 복사본을 만들어서 이름이 변경되는 경우를 방지 */
 
 	/* project 2 추가 */
-	char *save_ptr;
-	file_name = strtok_r(file_name, " ", &save_ptr);
+	// char *save_ptr;
+	// file_name = strtok_r(file_name, " ", &save_ptr);
 	/* Create a new thread to execute FILE_NAME. */
 	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);	/* initd 함수를 실행하는 새로운 스레드 생성 */
 	if (tid == TID_ERROR)							/* 스레드 생성 실패시 할당된 페이지 해제 & 에러값 반환 */
@@ -257,10 +257,10 @@ process_exec (void *f_name) {
 	int argc = 0;							/* argc : 현재까지 저장된 인자의 갯수*/
 	
 	token = strtok_r(file_name, " ", &save_ptr);
-	argv[argc] = token;
 	while(token != NULL) {
+		argv[argc] = token;
 		token = strtok_r(NULL, " ", &save_ptr);
-		argv[argc++] = token;
+		argc++;
 	}
 
 	/* We cannot use the intr_frame in the thread structure.
@@ -281,7 +281,6 @@ process_exec (void *f_name) {
 	// palloc_free_page (file_name);			/* 포인터 메모리 해제 */
 	if (!success)							/* load 함수 실패 시, -1을 리턴하고 종료 */
 	{
-		palloc_free_page(file_name);
 		return -1;
 	}	
 
@@ -337,7 +336,7 @@ argument_stack(struct intr_frame *if_, char **argv, int argc) {
     }
 
     /* fake return address 추가 */
-	if_->rsp = sizeof(void *);
+	if_->rsp = if_->rsp -8;
     memset(if_->rsp, 0, sizeof(void *));
 
     /* 레지스터 값 설정 */
@@ -396,7 +395,7 @@ process_exit (void) {
 	}
 	/* 파일 디스크립터 테이블 메모리 해제 */
 	palloc_free_multiple(cur->file_descriptor_table, FDT_PAGES);
-	// file_close(cur->running);
+	file_close(cur->running);
 
 	/* 부모 프로세스 깨우기 */
 	sema_up(&cur->wait_sema);
@@ -548,6 +547,10 @@ load (const char *file_name, struct intr_frame *if_) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
 	}
+
+	/* 실행 중인 스레드 t의 running 값을 실행할 파일로 초기화 */
+	t->running = file;
+	file_deny_write(file);
 
 	/* Read and verify executable header. 
 	 * 오픈한 실행 파일에서 ELF 헤더 정보를 읽어오고, 적절한 ELF 형식인지 확인함
