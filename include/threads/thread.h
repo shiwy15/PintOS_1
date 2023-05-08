@@ -9,6 +9,10 @@
 #include "vm/vm.h"
 #endif
 
+/* Project 2 : 추가 */
+#include "threads/synch.h"
+#define FDT_PAGES 3
+#define FDCOUNT_LIMIT FDT_PAGES *(1 << 10)
 
 /* 스레드의 상태 정보 : States in a thread's life cycle. */
 enum thread_status {
