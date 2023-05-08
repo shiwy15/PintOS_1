@@ -8,6 +8,7 @@
         "palloc.h": "c",
         "syscall.h": "c",
         "thread.h": "c",
-        "synch.h": "c"
+        "synch.h": "c",
+        "*.inc": "c"
     }
 }

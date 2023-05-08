@@ -18,9 +18,6 @@
 #include "threads/mmu.h"
 #include "threads/vaddr.h"
 #include "intrinsic.h"
-/* 추가! */
-#include "threads/synch.h"
-#include "userprog/syscall.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -31,7 +28,7 @@ static void initd (void *f_name);
 static void __do_fork (void *);
 
 /* 추가 */
-void argument_stack(struct intr_frame *if_, char **argv, int argc);
+void argument_stack(char **argv, int argc, struct intr_frame *if_);
 
 /* General process initializer for initd and other process. */
 static void
@@ -50,18 +47,17 @@ process_create_initd (const char *file_name) {		/* file_name : 실행파일 이�
 	tid_t tid;										/* 스레드 id값 */
 
 	/* Make a copy of FILE_NAME.
-	 * Otherwise there's a race between the caller and load(). */
-	fn_copy = palloc_get_page (0);					/* palloc 함수로 페이지 할당 */
-	/* void *palloc_get_page (enum palloc_flags);
+	 * Otherwise there's a race between the caller and load().
+	 * void *palloc_get_page (enum palloc_flags);
 	 * 여기에 인자로 0을 전달하면 기본적인 페이지 할당을 수행하고, 할당된 페이지를 0으로 초기화! */
+	fn_copy = palloc_get_page (0);					/* palloc 함수로 페이지 할당 */
 	if (fn_copy == NULL)							/* 할당 실패시 에러값 반환 */
 		return TID_ERROR;
 	strlcpy (fn_copy, file_name, PGSIZE);			/* 실행파일 이름을 fn_copy로 복사 */
 	          										/* 실행파일 이름이 복사본을 만들어서 이름이 변경되는 경우를 방지 */
-
 	/* project 2 추가 */
-	// char *save_ptr;
-	// file_name = strtok_r(file_name, " ", &save_ptr);
+	char *save_ptr;
+	file_name = strtok_r(fn_copy, " ", &save_ptr);
 	/* Create a new thread to execute FILE_NAME. */
 	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);	/* initd 함수를 실행하는 새로운 스레드 생성 */
 	if (tid == TID_ERROR)							/* 스레드 생성 실패시 할당된 페이지 해제 & 에러값 반환 */
@@ -112,7 +108,7 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	/* 3. 새로운 스레드의 세마포어를 내리고, 자식프로세스가 로딩될 때까지 대기!
 	 * 반환된 tid에 해당하는 스레드 찾아서 child에 저장 
 	 * 부모 스레드는 자식 스레드를 미리 저장해놓고, 해당 정보를 확인하며 오류 여부 등을 확인할 수 있음 */
-	struct thread *child = get_child(pid);		/*????? 이 함수 어디감? 내가 만들어야 되는구나....^^...*/
+	struct thread *child = get_child(pid);	
 	sema_down(&child->fork_sema);
 	if (child->exit_status == -1)
 		return TID_ERROR;
@@ -146,13 +142,13 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	 *    TODO: NEWPAGE. */
 	/* 자식 스레드의 페이지 테이블에 새로운 페이지를 할당하고, 그 주소를 newpage에 저장 
 	 * 할당된 페이지는 PAL_USER 옵션을 가지며, 유저 프로그램이 접근 가능한 공간에 위치 */
-	newpage = palloc_get_page(PAL_USER);
+	newpage = palloc_get_page(PAL_USER | PAL_ZERO);
 	if(newpage == NULL)
 		return false;
 	/* 4. TODO: Duplicate parent's page to the new page and
 	 *    TODO: check whether parent's page is writable or not (set WRITABLE
 	 *    TODO: according to the result). */
-	/* 부모 페이지를 새로운 페이지에 복제*/
+	/* 부모 페이지(가상주소)를 새로운 페이지에 복제 */
 	memcpy(newpage, parent_page, PGSIZE);
 	writable = is_writable(pte);		/* pte 읽고 쓰기가 가능한지 확인 */
 	/* 5. Add new page to child's page table at address VA with WRITABLE
@@ -216,14 +212,12 @@ __do_fork (void *aux) {
 	/* 기본 fd 복사. 2부터 시작. 3부터 해야 하는거 아닐지...*/
 	current->file_descriptor_table[0] = parent->file_descriptor_table[0];
 	current->file_descriptor_table[1] = parent->file_descriptor_table[1];
-	int fd = 2;
-	struct file *f;
 
 	current->fd_idx = parent->fd_idx;
 
 	/* 5. 부모의 파일 디스크립터 테이블에서 열린 파일을 복사 */
-	for (fd; fd < FD_NUM_LIMIT; fd++) {
-		f = parent->file_descriptor_table[fd];
+	for (int fd = 2; fd < FD_NUM_LIMIT; fd++) {
+		struct file *f = parent->file_descriptor_table[fd];
 		if (f == NULL)
 			continue;
 		current->file_descriptor_table[fd] = file_duplicate(f);
@@ -232,7 +226,6 @@ __do_fork (void *aux) {
 	current->fd_idx = parent->fd_idx;
 	/* 세마포어값을 증가시켜서 부모 프로세스에게 자식이 생성되었음을 알림 */
 	sema_up(&current->fork_sema);
-	// process_init();
 	
 	/* Finally, switch to the newly created process. */
 	if (succ)
@@ -257,10 +250,11 @@ process_exec (void *f_name) {
 	int argc = 0;							/* argc : 현재까지 저장된 인자의 갯수*/
 	
 	token = strtok_r(file_name, " ", &save_ptr);
+	argv[argc] = token;
 	while(token != NULL) {
-		argv[argc] = token;
 		token = strtok_r(NULL, " ", &save_ptr);
 		argc++;
+		argv[argc] = token;
 	}
 
 	/* We cannot use the intr_frame in the thread structure.
@@ -281,13 +275,14 @@ process_exec (void *f_name) {
 	// palloc_free_page (file_name);			/* 포인터 메모리 해제 */
 	if (!success)							/* load 함수 실패 시, -1을 리턴하고 종료 */
 	{
+		palloc_free_page(file_name);
 		return -1;
 	}	
 
 		/* 유저 스택에 인자 저장 */
-	argument_stack(&_if, argv, argc);
+	argument_stack(argv, argc, &_if);
 
-	hex_dump(_if.rsp, _if.rsp, USER_STACK-_if.rsp, true);
+	// hex_dump(_if.rsp, _if.rsp, USER_STACK-_if.rsp, true);
 	
 	// palloc_free_page(file_name);
 
@@ -300,12 +295,11 @@ process_exec (void *f_name) {
  * parse : 메모리공간, count : 인자 갯수, esp : 스택 포인터 주소값 
  * 64비트 환경에서 포인터는 8바이트이므로, 스택포인터를 8의 배수로 맞춰주어야 한다. */
 void 
-argument_stack(struct intr_frame *if_, char **argv, int argc) {
+argument_stack (char **argv, int argc, struct intr_frame *if_) {
 	char *argv_address[128];						/* 각 인자가 저장될 스택 주소를 저장하기 위한 배열 */
-	int i;
 
 	/* 각 인자를 유저스택에 저장 */
-	for (i = argc - 1; i >= 0; i--) {			/* argc-1부터 0까지 역순으로 인덱스를 탐색 */
+	for (int i = argc - 1; i >= 0; i--) {			/* argc-1부터 0까지 역순으로 인덱스를 탐색 */
 		if (argv[i] == NULL) {
 			continue;
 		}
@@ -324,19 +318,19 @@ argument_stack(struct intr_frame *if_, char **argv, int argc) {
 	}
 
 	/* 유저 스택에 argv_address 배열의 주소 값들을 푸쉬 */
-    for (i = argc; i >= 0; i--) {
+    for (int j = argc; j >= 0; j--) {
 		if_->rsp = if_->rsp - 8;
 		/* 현재 i와 argc가 같은지 확인 : 같다면 마지막 인자라는 뜻이므로, null pointer sentinel을 푸쉬 */
-        if (i == argc) {
+        if (j == argc) {
             memset(if_->rsp, 0, sizeof(char **));
         } else {	
-            memcpy(if_->rsp, &argv_address[i], sizeof(char **));
+            memcpy(if_->rsp, &argv_address[j], sizeof(char **));
 			/* argv_address[i] 주소값을 그대로 스택에 푸쉬 */
         }
     }
 
     /* fake return address 추가 */
-	if_->rsp = if_->rsp -8;
+	if_->rsp = if_->rsp - sizeof(void *);
     memset(if_->rsp, 0, sizeof(void *));
 
     /* 레지스터 값 설정 */
@@ -390,7 +384,7 @@ process_exit (void) {
 	 * TODO: We recommend you to implement process resource cleanup here. */
 
 	/* 프로세스에 열린 모든 파일 닫기 */
-	for (int fd = 0; fd <= FD_NUM_LIMIT; fd++) {
+	for (int fd = 0; fd < FD_NUM_LIMIT; fd++) {
 		close(fd);
 	}
 	/* 파일 디스크립터 테이블 메모리 해제 */

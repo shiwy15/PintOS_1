@@ -11,7 +11,7 @@ void process_exit (void);
 void process_activate (struct thread *next);
 
 /* project 2 추가! */
-void argument_stack(struct intr_frame *if_, char **argv, int argc);
+void argument_stack(char **argv, int argc, struct intr_frame *if_);
 struct thread *get_child(int pid);
 
 #endif /* userprog/process.h */
